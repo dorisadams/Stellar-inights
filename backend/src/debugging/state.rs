@@ -149,6 +149,11 @@ mod tests {
     // Manual lock to serialise env-var tests without pulling in
     // `serial_test` as a dev-dep. Tests that mutate process-global state
     // (env vars) take this lock so they do not interleave.
+    //
+    // NOTE: This is `std::sync::Mutex`, not `tokio::sync::Mutex`. Do NOT
+    // hold the guard across an `.await`; the current test bodies are
+    // totally synchronous (env reads + asserts), so the synchronous lock
+    // is the deliberately-correct primitive here.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn clear_env() {

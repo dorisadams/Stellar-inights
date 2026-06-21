@@ -201,8 +201,13 @@ export function useOfflineCache(config?: OfflineCacheConfig): UseOfflineCacheRes
       }
 
       writeCache(newCache);
-      setCache(newCache);
+      // Mirror to SQLite BEFORE updating React state so a later
+      // `getCachedData` read can never see "MMKV says fresh, SQLite says
+      // older". The call is fire-and-forget because MMKV (the primary
+      // cache) is already authoritative; SQLite is the long-term
+      // fallback that tolerates eventual consistency.
       void mirrorEntryToSqlite(entry);
+      setCache(newCache);
     },
     [cache, isEnabled, ttl, maxSize, mirrorEntryToSqlite]
   );
