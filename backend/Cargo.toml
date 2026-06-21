@@ -25,10 +25,16 @@ large_enum_variant = "allow"
 items_after_test_module = "allow"
 module_inception = "allow"
 
-# Panic prevention lints - enforce proper error handling
-unwrap_used = "allow"
-expect_used = "allow"
-panic = "allow"
+# Panic prevention lints - enforce proper error handling.
+# These were historically `allow` but disabling them silently allowed
+# panic-prone patterns (`.unwrap()`, `.expect()`, `panic!`, `todo!`,
+# `unimplemented!`) into production code. They are now `warn` and the CI
+# gate in `.github/workflows/clippy.yml` runs `cargo clippy -- -D
+# clippy::unwrap_used -D clippy::expect_used -D clippy::panic` so any
+# regression fails the build. See issue #127.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
 
 [features]
 legacy_sep10_tests = []
