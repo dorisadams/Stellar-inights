@@ -125,9 +125,21 @@ jobs:
           key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('backend/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-clippy-
 
-      - name: Clippy (deny warnings)
+      # Issue #127: panic-prevention lints in backend/Cargo.toml are
+      # `warn` by default; this gate promotes them to `deny` ONLY for the
+      # library target (production code). Tests keep their idiomatic
+      # `.unwrap()`/`.expect()` calls but are still linted at warn level so
+      # regressions remain visible.
+      - name: Clippy lib (deny panic-lints) + tests (warn)
         working-directory: backend
-        run: cargo clippy --lib -- -W clippy::all -D warnings
+        run: |
+          cargo clippy --lib -- \
+            -W clippy::all \
+            -D warnings \
+            -D clippy::unwrap_used \
+            -D clippy::expect_used \
+            -D clippy::panic
+          cargo clippy --tests -- -W clippy::all
 
   # ── Backend: coverage gate ≥ 70 % ────────────────────────────────────────
   backend-coverage:
