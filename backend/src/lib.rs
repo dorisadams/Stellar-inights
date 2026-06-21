@@ -6,6 +6,7 @@ pub mod api_analytics_middleware;
 pub mod api_contract;
 pub mod api_deprecation_middleware;
 pub mod api_v1_middleware;
+pub mod debugging; // Dev-only debug endpoints + diagnostic snapshots (issue #104)
 pub mod deprecation_middleware;
 pub mod distributed_lock;
 pub mod monitor;
@@ -45,6 +46,7 @@ pub mod observability;
 pub mod openapi;
 pub mod pagination;
 pub mod payload_limit;
+pub mod queue; // Idempotent offline-sync queue processor (issue #93)
 pub mod rate_limit;
 pub mod replay;
 pub mod request_id;
