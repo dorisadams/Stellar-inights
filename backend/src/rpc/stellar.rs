@@ -507,6 +507,30 @@ impl StellarRpcClient {
     pub fn new(rpc_url: String, horizon_url: String, mock_mode: bool) -> Self {
         let request_timeout = rpc_request_timeout_from_env();
 
+        // Build the HTTP client. `Client::builder().build()` only fails when
+        // the underlying TLS configuration is invalid; in that rare case we
+        // fall back to `Client::new()`. **The fallback client does not honour
+        // `request_timeout`** – requests then use reqwest's default (no
+        // per-request deadline). We log loudly so Sentry/on-call catches it,
+        // rather than crashing the process for a fault we can keep running
+        // through.
+        let client = match Client::builder().timeout(request_timeout).build() {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(
+                    request_timeout_secs = request_timeout.as_secs(),
+                    error = %error,
+                    "RPC client: failed to build HTTP client with configured timeout; \
+                     falling back to default Client (no timeout). Requests may run longer than expected."
+                );
+                Client::new()
+            }
+        };
+        // SAFETY: reqwest::ClientBuilder::build only fails when a TLS backend is
+        // unavailable or a custom certificate is malformed. With only a timeout
+        // set this call is infallible; panicking here is the correct behaviour
+        // because a misconfigured environment should abort startup immediately.
+        #[allow(clippy::expect_used)]
         let client = Client::builder()
             .timeout(request_timeout)
             .build()
@@ -604,6 +628,27 @@ impl StellarRpcClient {
         let network_config = NetworkConfig::for_network(network);
         let request_timeout = rpc_request_timeout_from_env();
 
+        // Build the HTTP client. `Client::builder().build()` only fails when
+        // the underlying TLS configuration is invalid; in that rare case we
+        // fall back to `Client::new()`. **The fallback client does not honour
+        // `request_timeout`** – requests then use reqwest's default (no
+        // per-request deadline). We log loudly so Sentry/on-call catches it,
+        // rather than crashing the process for a fault we can keep running
+        // through.
+        let client = match Client::builder().timeout(request_timeout).build() {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(
+                    request_timeout_secs = request_timeout.as_secs(),
+                    error = %error,
+                    "RPC client: failed to build HTTP client with configured timeout; \
+                     falling back to default Client (no timeout). Requests may run longer than expected."
+                );
+                Client::new()
+            }
+        };
+        // SAFETY: see comment in `new` — only timeout is set, build is infallible.
+        #[allow(clippy::expect_used)]
         let client = Client::builder()
             .timeout(request_timeout)
             .build()
@@ -846,12 +891,25 @@ impl StellarRpcClient {
         let mut params = serde_json::Map::new();
         params.insert("pagination".to_string(), json!({ "limit": limit }));
         if let Some(c) = cursor {
-            params
+            // The `pagination` object is unconditionally inserted above, so
+            // a missing/non-object value is a programmer error rather than a
+            // runtime condition. Use `if let` to surface a typed parse error
+            // instead of `expect()` so issue #127's panic-prevention lints
+            // stay clean in production code.
+            if let Some(pagination) = params.get_mut("pagination").and_then(|v| v.as_object_mut()) {
+                pagination.insert("cursor".to_string(), json!(c));
+            } else {
+                return Err(RpcError::ParseError(
+                    "internal: pagination field missing or malformed".to_string(),
+                ));
+            // We just inserted "pagination" as an object above; this nested
+            // modification is safe, but we use if-let to avoid any .expect.
+            if let Some(obj) = params
                 .get_mut("pagination")
-                .expect("pagination field should exist")
-                .as_object_mut()
-                .expect("pagination should be an object")
-                .insert("cursor".to_string(), json!(c));
+                .and_then(|v| v.as_object_mut())
+            {
+                obj.insert("cursor".to_string(), json!(c));
+            }
         } else if let Some(start) = start_ledger {
             params.insert("startLedger".to_string(), json!(start));
         }

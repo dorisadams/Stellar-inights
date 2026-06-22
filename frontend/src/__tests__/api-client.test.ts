@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '../lib/api-client';
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete, apiReconcile } from '../lib/api-client';
 
 // Mock fetch
 global.fetch = vi.fn();
@@ -138,6 +138,44 @@ describe('API Client', () => {
           headers: expect.objectContaining({
             'X-CSRF-Token': 'test-token-123',
           }),
+        })
+      );
+    });
+  });
+
+  describe('apiReconcile', () => {
+    it('posts data types and last known timestamp to /api/rpc/reconcile', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ updates: [] }),
+      });
+
+      await apiReconcile(['corridor', 'anchor'], '2026-06-20T00:00:00.000Z');
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/rpc/reconcile',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            data_types: ['corridor', 'anchor'],
+            last_known_timestamp: '2026-06-20T00:00:00.000Z',
+          }),
+        })
+      );
+    });
+
+    it('omits last_known_timestamp when not provided', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ updates: [] }),
+      });
+
+      await apiReconcile(['corridor']);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        '/api/rpc/reconcile',
+        expect.objectContaining({
+          body: JSON.stringify({ data_types: ['corridor'], last_known_timestamp: undefined }),
         })
       );
     });

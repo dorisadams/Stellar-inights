@@ -1,3 +1,8 @@
+// Prometheus metric registration and `JobExecution::complete_*` methods use
+// `.expect()` which is the idiomatic pattern — registration failures and
+// double-completion are programmer errors that should abort at startup / panic.
+#![allow(clippy::expect_used)]
+
 use lazy_static::lazy_static;
 use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts};
 use serde::{Deserialize, Serialize};

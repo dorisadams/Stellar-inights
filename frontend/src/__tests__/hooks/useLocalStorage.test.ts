@@ -176,3 +176,85 @@ describe('useLocalStorage', () => {
     expect(value).toBe('original');
   });
 });
+
+describe('useLocalStorage - staleness & invalidation', () => {
+  it('reports isStale as false when no ttlMs is configured', () => {
+    const { result } = renderHook(() => useLocalStorage('no-ttl', 'value'));
+    const [, , , info] = result.current;
+    expect(info.isStale).toBe(false);
+  });
+
+  it('is stale before any value has ever been written, when a ttl is configured', () => {
+    const { result } = renderHook(() =>
+      useLocalStorage('never-written', 'default', { ttlMs: 1000 }),
+    );
+    const [, , , info] = result.current;
+    expect(info.isStale).toBe(true);
+    expect(info.lastUpdated).toBeNull();
+  });
+
+  it('is fresh immediately after a write, then stale once the ttl elapses', () => {
+    const { result, rerender } = renderHook(() =>
+      useLocalStorage('ttl-key', 'initial', { ttlMs: 1000 }),
+    );
+
+    act(() => {
+      const [, setValue] = result.current;
+      setValue('updated');
+    });
+
+    expect(result.current[3].isStale).toBe(false);
+    expect(result.current[3].lastUpdated).not.toBeNull();
+
+    const realNow = Date.now;
+    Date.now = () => realNow() + 5000;
+    try {
+      rerender();
+      expect(result.current[3].isStale).toBe(true);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it('invalidate() marks the value stale without clearing the stored value', () => {
+    const { result } = renderHook(() =>
+      useLocalStorage('invalidate-key', 'initial', { ttlMs: 60_000 }),
+    );
+
+    act(() => {
+      const [, setValue] = result.current;
+      setValue('persisted-value');
+    });
+    expect(result.current[3].isStale).toBe(false);
+
+    act(() => {
+      const [, , , info] = result.current;
+      info.invalidate();
+    });
+
+    const [value, , , info] = result.current;
+    expect(value).toBe('persisted-value');
+    expect(info.isStale).toBe(true);
+    expect(info.lastUpdated).toBeNull();
+  });
+
+  it('removeValue() also clears the staleness metadata', () => {
+    const { result } = renderHook(() =>
+      useLocalStorage('remove-with-meta', 'initial', { ttlMs: 60_000 }),
+    );
+
+    act(() => {
+      const [, setValue] = result.current;
+      setValue('something');
+    });
+    expect(result.current[3].lastUpdated).not.toBeNull();
+
+    act(() => {
+      const [, , removeValue] = result.current;
+      removeValue();
+    });
+
+    expect(result.current[3].lastUpdated).toBeNull();
+    expect(result.current[0]).toBe('initial');
+  });
+});

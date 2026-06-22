@@ -206,6 +206,10 @@ where
         id: &tracing::span::Id,
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
+        // SAFETY: The tracing-subscriber framework guarantees that any span id
+        // passed to `on_new_span` refers to a live span; `.expect()` here
+        // matches the documented contract and failure is a framework bug.
+        #[allow(clippy::expect_used)]
         let span = ctx.span(id).expect("span must exist on new_span");
         // Seed with a placeholder; the real IDs are stamped in on_record once
         // the OTel layer has attached its context (see trace_propagation_middleware).
@@ -221,6 +225,8 @@ where
         values: &tracing::span::Record<'_>,
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
+        // SAFETY: Same contract as `on_new_span` — span id is guaranteed live.
+        #[allow(clippy::expect_used)]
         let span = ctx.span(id).expect("span must exist on record");
         let mut exts = span.extensions_mut();
         if let Some(ids) = exts.get_mut::<TraceIds>() {

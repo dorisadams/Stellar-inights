@@ -79,6 +79,9 @@ pub struct CoinGeckoProvider {
 impl CoinGeckoProvider {
     #[must_use]
     pub fn new(api_key: Option<String>, timeout: Duration) -> Self {
+        // SAFETY: reqwest::ClientBuilder only fails when TLS is misconfigured.
+        // With only a timeout set this is infallible.
+        #[allow(clippy::expect_used)]
         let client = Client::builder()
             .timeout(timeout)
             .build()

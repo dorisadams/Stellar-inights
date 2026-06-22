@@ -176,6 +176,10 @@ pub struct SubmissionResult {
 impl ContractService {
     #[must_use]
     pub fn new(config: ContractConfig) -> Self {
+        // SAFETY: reqwest::ClientBuilder only fails when TLS is misconfigured.
+        // With only a timeout set this is infallible; panicking at startup is
+        // the correct behaviour for an unconfigurable HTTP stack.
+        #[allow(clippy::expect_used)]
         let client = Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .build()

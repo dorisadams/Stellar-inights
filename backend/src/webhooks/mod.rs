@@ -20,6 +20,9 @@ impl WebhookSignature {
     /// Generate HMAC-SHA256 signature for webhook payload
     #[must_use]
     pub fn sign(payload: &str, secret: &str) -> String {
+        // SAFETY: HmacSha256::new_from_slice accepts any key length by design;
+        // the only error case (invalid length) cannot occur for HMAC-SHA256.
+        #[allow(clippy::expect_used)]
         let mut mac =
             HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
         Mac::update(&mut mac, payload.as_bytes());

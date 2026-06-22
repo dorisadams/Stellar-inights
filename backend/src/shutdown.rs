@@ -113,8 +113,13 @@ pub async fn wait_for_signal() {
         use tokio::signal::unix::{signal, SignalKind};
 
         let mut sigterm =
+            // SAFETY: Failing to install a signal handler means the OS rejected
+            // the request — panicking at startup is the correct response.
+            #[allow(clippy::expect_used)]
             signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
-        let mut sigint = signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
+        let mut sigint =
+            #[allow(clippy::expect_used)]
+            signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
 
         tokio::select! {
             _ = sigterm.recv() => {
@@ -128,6 +133,10 @@ pub async fn wait_for_signal() {
 
     #[cfg(not(unix))]
     {
+        // SAFETY: ctrl_c() only errors if the OS refuses to register the handler.
+        // Panicking at startup is the correct response — we cannot run safely
+        // without a shutdown signal.
+        #[allow(clippy::expect_used)]
         tokio::signal::ctrl_c()
             .await
             .expect("Failed to install Ctrl+C handler");

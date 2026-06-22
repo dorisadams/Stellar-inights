@@ -80,6 +80,86 @@ pub struct JobSummary {
     pub overall_success_rate: f64,
 }
 
+/// Extract a typed field from a JSON object, returning an error if missing or wrong type.
+macro_rules! get_field {
+    ($obj:expr, $key:expr, $method:ident) => {
+        $obj.get($key)
+            .and_then(|v| v.$method())
+            .ok_or_else(|| anyhow::anyhow!("missing or invalid field '{}'", $key))
+    };
+}
+
+/// Parse a single job entry from the summary JSON into a typed [`JobStatusDetail`].
+///
+/// Returns `Ok(None)` when the entry is filtered out by `query.job`.
+fn parse_job_entry(
+    name: &str,
+    job_data: &serde_json::Value,
+    query: &JobMonitoringQuery,
+) -> anyhow::Result<Option<JobStatusDetail>> {
+    // Filter by specific job if requested
+    if let Some(ref filter_job) = query.job {
+        if name != filter_job {
+            return Ok(None);
+        }
+    }
+
+    let job_obj = job_data
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("job entry '{}' is not an object", name))?;
+
+    let is_active = get_field!(job_obj, "is_active", as_bool)?;
+    let total_executions_job = get_field!(job_obj, "total_executions", as_u64)?;
+    let total_failures_job = get_field!(job_obj, "total_failures", as_u64)?;
+    let consecutive_failures = get_field!(job_obj, "consecutive_failures", as_u64)?;
+    let last_success_timestamp = job_obj.get("last_success_timestamp").and_then(|v| v.as_i64());
+    let last_failure_timestamp = job_obj.get("last_failure_timestamp").and_then(|v| v.as_i64());
+
+    let success_rate = if total_executions_job > 0 {
+        ((total_executions_job - total_failures_job) as f64 / total_executions_job as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let health_status = determine_health_status(
+        is_active,
+        consecutive_failures,
+        success_rate,
+        last_success_timestamp,
+        last_failure_timestamp,
+    );
+
+    let last_execution = job_obj.get("last_execution").and_then(|exec| {
+        exec.as_object().and_then(|exec_obj| {
+            let status = exec_obj.get("status")?.as_str()?.to_string();
+            let started_at = exec_obj.get("started_at")?.as_u64()?;
+            Some(LastExecutionDetail {
+                status,
+                started_at,
+                duration_ms: exec_obj.get("duration_ms").and_then(|v| v.as_u64()),
+                completed_at: exec_obj.get("completed_at").and_then(|v| v.as_u64()),
+                error: exec_obj
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            })
+        })
+    });
+
+    Ok(Some(JobStatusDetail {
+        name: name.to_string(),
+        is_active,
+        total_executions: total_executions_job,
+        total_failures: total_failures_job,
+        consecutive_failures,
+        success_rate,
+        last_success_timestamp,
+        last_failure_timestamp,
+        last_execution,
+        health_status,
+    }))
+}
+
 /// Get comprehensive job status
 pub async fn get_job_status(
     State(_db): State<Arc<Database>>,
@@ -88,11 +168,16 @@ pub async fn get_job_status(
     info!("Fetching job status with query: {:?}", query);
 
     let status_summary = get_job_status_summary().await;
-    let summary_data = status_summary.as_object().unwrap();
+    let summary_data = status_summary
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("job status summary is not an object"))?;
 
-    let jobs_data = summary_data.get("jobs").unwrap().as_object().unwrap();
+    let jobs_data = summary_data
+        .get("jobs")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| anyhow::anyhow!("missing or invalid 'jobs' field in status summary"))?;
+
     let mut jobs = HashMap::new();
-
     let mut total_executions = 0u64;
     let mut total_failures = 0u64;
     let mut healthy_count = 0usize;
@@ -100,82 +185,21 @@ pub async fn get_job_status(
     let mut critical_count = 0usize;
 
     for (name, job_data) in jobs_data {
-        // Filter by specific job if requested
-        if let Some(ref filter_job) = query.job {
-            if name != filter_job {
-                continue;
-            }
-        }
-
-        let job_obj = job_data.as_object().unwrap();
-        let is_active = job_obj.get("is_active").unwrap().as_bool().unwrap();
-        let total_executions_job = job_obj.get("total_executions").unwrap().as_u64().unwrap();
-        let total_failures_job = job_obj.get("total_failures").unwrap().as_u64().unwrap();
-        let consecutive_failures = job_obj
-            .get("consecutive_failures")
-            .unwrap()
-            .as_u64()
-            .unwrap();
-        let last_success_timestamp = job_obj.get("last_success_timestamp").unwrap().as_i64();
-        let last_failure_timestamp = job_obj.get("last_failure_timestamp").unwrap().as_i64();
-
-        total_executions += total_executions_job;
-        total_failures += total_failures_job;
-
-        let success_rate = if total_executions_job > 0 {
-            ((total_executions_job - total_failures_job) as f64 / total_executions_job as f64)
-                * 100.0
-        } else {
-            0.0
+        let Some(detail) = parse_job_entry(name, job_data, &query)? else {
+            continue;
         };
 
-        let health_status = determine_health_status(
-            is_active,
-            consecutive_failures,
-            success_rate,
-            last_success_timestamp,
-            last_failure_timestamp,
-        );
+        total_executions += detail.total_executions;
+        total_failures += detail.total_failures;
 
-        match health_status {
+        match detail.health_status {
             JobHealthStatus::Healthy => healthy_count += 1,
             JobHealthStatus::Warning => warning_count += 1,
             JobHealthStatus::Critical => critical_count += 1,
             JobHealthStatus::Unknown => {}
         }
 
-        let last_execution = job_obj.get("last_execution").and_then(|exec| {
-            exec.as_object().map(|exec_obj| LastExecutionDetail {
-                status: exec_obj
-                    .get("status")
-                    .unwrap()
-                    .as_str()
-                    .unwrap()
-                    .to_string(),
-                started_at: exec_obj.get("started_at").unwrap().as_u64().unwrap(),
-                duration_ms: exec_obj.get("duration_ms").and_then(|v| v.as_u64()),
-                completed_at: exec_obj.get("completed_at").and_then(|v| v.as_u64()),
-                error: exec_obj
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-            })
-        });
-
-        let job_detail = JobStatusDetail {
-            name: name.clone(),
-            is_active,
-            total_executions: total_executions_job,
-            total_failures: total_failures_job,
-            consecutive_failures,
-            success_rate,
-            last_success_timestamp,
-            last_failure_timestamp,
-            last_execution,
-            health_status,
-        };
-
-        jobs.insert(name.clone(), job_detail);
+        jobs.insert(name.clone(), detail);
     }
 
     let overall_success_rate = if total_executions > 0 {
@@ -195,13 +219,16 @@ pub async fn get_job_status(
         overall_success_rate,
     };
 
-    let response = JobStatusResponse {
+    let timestamp = summary_data
+        .get("timestamp")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| anyhow::anyhow!("missing or invalid 'timestamp' in status summary"))?;
+
+    Ok(Json(JobStatusResponse {
         jobs,
         summary,
-        timestamp: summary_data.get("timestamp").unwrap().as_i64().unwrap(),
-    };
-
-    Ok(Json(response))
+        timestamp,
+    }))
 }
 
 /// Get simple health check for jobs
@@ -209,25 +236,32 @@ pub async fn get_job_health(
     State(_db): State<Arc<Database>>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let status_summary = get_job_status_summary().await;
-    let summary_data = status_summary.as_object().unwrap();
-    let jobs_data = summary_data.get("jobs").unwrap().as_object().unwrap();
+    let summary_data = status_summary
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("job status summary is not an object"))?;
+    let jobs_data = summary_data
+        .get("jobs")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| anyhow::anyhow!("missing or invalid 'jobs' field in status summary"))?;
 
     let mut healthy_count = 0usize;
     let mut warning_count = 0usize;
     let mut critical_count = 0usize;
 
     for (_, job_data) in jobs_data {
-        let job_obj = job_data.as_object().unwrap();
-        let is_active = job_obj.get("is_active").unwrap().as_bool().unwrap();
-        let total_executions = job_obj.get("total_executions").unwrap().as_u64().unwrap();
-        let total_failures = job_obj.get("total_failures").unwrap().as_u64().unwrap();
+        let Some(job_obj) = job_data.as_object() else {
+            continue;
+        };
+
+        let is_active = job_obj.get("is_active").and_then(|v| v.as_bool()).unwrap_or(false);
+        let total_executions = job_obj.get("total_executions").and_then(|v| v.as_u64()).unwrap_or(0);
+        let total_failures = job_obj.get("total_failures").and_then(|v| v.as_u64()).unwrap_or(0);
         let consecutive_failures = job_obj
             .get("consecutive_failures")
-            .unwrap()
-            .as_u64()
-            .unwrap();
-        let last_success_timestamp = job_obj.get("last_success_timestamp").unwrap().as_i64();
-        let last_failure_timestamp = job_obj.get("last_failure_timestamp").unwrap().as_i64();
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let last_success_timestamp = job_obj.get("last_success_timestamp").and_then(|v| v.as_i64());
+        let last_failure_timestamp = job_obj.get("last_failure_timestamp").and_then(|v| v.as_i64());
 
         let success_rate = if total_executions > 0 {
             ((total_executions - total_failures) as f64 / total_executions as f64) * 100.0
@@ -262,16 +296,14 @@ pub async fn get_job_health(
         "healthy"
     };
 
-    let response = serde_json::json!({
+    Ok(Json(serde_json::json!({
         "status": overall_status,
         "total_jobs": total_jobs,
         "healthy_jobs": healthy_count,
         "warning_jobs": warning_count,
         "critical_jobs": critical_count,
         "timestamp": chrono::Utc::now().timestamp()
-    });
-
-    Ok(Json(response))
+    })))
 }
 
 /// Get job metrics for Prometheus

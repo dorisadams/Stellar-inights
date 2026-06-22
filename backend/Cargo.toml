@@ -26,9 +26,9 @@ items_after_test_module = "allow"
 module_inception = "allow"
 
 # Panic prevention lints - enforce proper error handling
-unwrap_used = "allow"
-expect_used = "allow"
-panic = "allow"
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
 
 [features]
 legacy_sep10_tests = []

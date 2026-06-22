@@ -1,3 +1,8 @@
+// Prometheus metric registration always uses `.expect()` which is the idiomatic
+// Rust pattern — a duplicate metric name is a programmer error that should
+// abort at startup, not be recoverable at runtime.
+#![allow(clippy::expect_used)]
+
 use std::time::Instant;
 
 use axum::{

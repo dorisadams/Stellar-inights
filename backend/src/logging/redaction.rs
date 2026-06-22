@@ -1,3 +1,7 @@
+// The `Regex::new(...).unwrap()` calls in this module are on compile-time
+// constant patterns that are always valid — unwrapping is correct here.
+#![allow(clippy::unwrap_used)]
+
 use serde::{Serialize, Serializer};
 use std::fmt;
 use regex::Regex;

@@ -159,6 +159,10 @@ pub fn routes(
     // 6. OAuth routes
     let oauth_routes = oauth::routes(pool);
 
+    // 7. Debug routes — development/test only, guarded by middleware
+    let debug_router = crate::debugging::debug_routes()
+        .layer(middleware::from_fn(crate::debugging::guard_dev_only));
+
     // V1 router (mounted at /api/v1 and also preserved at root for compatibility)
     let v1_router = Router::new()
         .merge(cached_routes)
@@ -173,6 +177,7 @@ pub fn routes(
     Router::new()
         .nest("/api/v1", v1_router.clone())
         .nest("/api/v2", v2_routes())
+        .nest("/debug", debug_router)
         .route("/api/version", get(get_api_version))
         // Preserve existing unversioned endpoints for backward compatibility.
         .merge(v1_router)

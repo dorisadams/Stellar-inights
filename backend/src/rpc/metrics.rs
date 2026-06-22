@@ -1,4 +1,7 @@
 //! Prometheus metrics for RPC error rates and circuit breaker state.
+// Prometheus metric registration uses `.expect()` which is the idiomatic
+// pattern — duplicate metric names are programmer errors that should abort.
+#![allow(clippy::expect_used)]
 
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter_vec, register_int_gauge_vec, IntCounterVec, IntGaugeVec};

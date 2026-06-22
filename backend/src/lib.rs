@@ -1,11 +1,17 @@
+// In test builds, .unwrap() and .expect() are idiomatic — suppress the lints
+// crate-wide so individual test modules don't need per-module allows.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod admin_audit_log;
 pub mod alerts;
 pub mod analytics;
 pub mod api;
+pub mod debugging;
 pub mod api_analytics_middleware;
 pub mod api_contract;
 pub mod api_deprecation_middleware;
 pub mod api_v1_middleware;
+pub mod debugging; // Dev-only debug endpoints + diagnostic snapshots (issue #104)
 pub mod deprecation_middleware;
 pub mod distributed_lock;
 pub mod monitor;
@@ -20,6 +26,7 @@ pub mod cache_invalidation;
 pub mod crypto;
 pub mod cursor_pagination;
 pub mod database;
+pub mod debug;
 
 pub mod db;
 pub mod email;
@@ -45,6 +52,8 @@ pub mod observability;
 pub mod openapi;
 pub mod pagination;
 pub mod payload_limit;
+pub mod queue; // Idempotent offline-sync queue processor (issue #93)
+pub mod queue;
 pub mod rate_limit;
 pub mod replay;
 pub mod request_id;

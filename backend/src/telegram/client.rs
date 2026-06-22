@@ -75,6 +75,9 @@ struct SetMyCommandsRequest<'a> {
 impl TelegramClient {
     #[must_use]
     pub fn new(token: &str) -> Self {
+        // SAFETY: reqwest::ClientBuilder only fails when TLS is misconfigured.
+        // With only a timeout set this is infallible.
+        #[allow(clippy::expect_used)]
         let client = Client::builder()
             .timeout(Duration::from_secs(35))
             .build()

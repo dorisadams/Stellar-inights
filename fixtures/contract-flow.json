@@ -1,0 +1,37 @@
+{
+  "description": "Shared mock fixtures for the multi-layer Stellar RPC / contract submission regression suite. Consumed by backend (Rust), frontend (Vitest) and mobile (Jest) tests so all three layers assert against the same ledger and transaction data. See docs/integration-testing.md.",
+  "ledger": {
+    "sequence": 51583040,
+    "hash": "abc123def456",
+    "previousHash": "xyz789uvw012",
+    "transactionCount": 245,
+    "operationCount": 1203,
+    "closedAt": "2026-01-22T10:30:00Z",
+    "baseFee": 100
+  },
+  "contractSubmission": {
+    "contractId": "CCONTRACTFIXTURE00000000000000000000000000000000A",
+    "functionName": "transfer",
+    "args": [
+      { "type": "address", "value": "GFIXTUREDESTINATIONACCOUNT0000000000000000000000" },
+      { "type": "i64", "value": "2500000000" }
+    ],
+    "simulatedEnvelope": "AAAAAgAAAABmaXh0dXJlLWVudmVsb3Bl",
+    "transactionHash": "fixturehash_3f9a7c1e2b8d4f6a0c5e9b3d7a1f4c6e",
+    "confirmedLedger": 51583040,
+    "status": "success"
+  },
+  "contractSubmissionFailure": {
+    "contractId": "CCONTRACTFIXTURE00000000000000000000000000000000A",
+    "functionName": "transfer",
+    "error": "Simulation failed: temporarily unavailable, resource limits exceeded",
+    "retryable": true
+  },
+  "offlineQueueItem": {
+    "method": "POST",
+    "url": "/api/v1/contracts/submit",
+    "payload": {
+      "transactionData": "AAAAAgAAAABmaXh0dXJlLWVudmVsb3Bl"
+    }
+  }
+}

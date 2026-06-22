@@ -125,9 +125,21 @@ jobs:
           key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('backend/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-clippy-
 
-      - name: Clippy (deny warnings)
+      # Issue #127: panic-prevention lints in backend/Cargo.toml are
+      # `warn` by default; this gate promotes them to `deny` ONLY for the
+      # library target (production code). Tests keep their idiomatic
+      # `.unwrap()`/`.expect()` calls but are still linted at warn level so
+      # regressions remain visible.
+      - name: Clippy lib (deny panic-lints) + tests (warn)
         working-directory: backend
-        run: cargo clippy --lib -- -W clippy::all -D warnings
+        run: |
+          cargo clippy --lib -- \
+            -W clippy::all \
+            -D warnings \
+            -D clippy::unwrap_used \
+            -D clippy::expect_used \
+            -D clippy::panic
+          cargo clippy --tests -- -W clippy::all
 
   # ── Backend: coverage gate ≥ 70 % ────────────────────────────────────────
   backend-coverage:
@@ -247,6 +259,37 @@ jobs:
       - name: Run smoke tests (all platforms)
         run: bash scripts/smoke-test-all.sh
 
+  # ── Multi-layer regression harness ────────────────────────────────────────
+  regression-harness:
+    name: Multi-layer regression harness (backend/frontend/mobile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: yarn install --frozen-lockfile
+
+      - name: Run regression harness (all layers)
+        run: bash scripts/run-regression-harness.sh
+
   # ── Workflow definitions self-check ──────────────────────────────────────
   workflow-definitions-check:
     name: Validate workflow YAML definitions
@@ -294,6 +337,7 @@ jobs:
       - mobile-typecheck
       - mobile-lint
       - cross-platform-smoke
+      - regression-harness
       - workflow-definitions-check
     runs-on: ubuntu-latest
     if: always()

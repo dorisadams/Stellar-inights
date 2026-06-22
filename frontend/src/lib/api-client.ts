@@ -154,10 +154,29 @@ export async function apiDelete<T = any>(url: string, options?: ApiOptions): Pro
     ...options,
     method: 'DELETE',
   });
-  
+
   if (!response.ok) {
     throw new Error(`API error: ${response.status} ${response.statusText}`);
   }
-  
+
   return response.json();
+}
+
+/**
+ * Recover from stale cached/offline data by reconciling with the server.
+ *
+ * Wraps the existing `/api/rpc/reconcile` endpoint. Pair this with
+ * `useLocalStorage`'s `isStale` flag and `invalidate()`: when a cached value
+ * is reported stale, call this with the timestamp it was last refreshed and
+ * use the returned updates to refresh local state before invalidating.
+ */
+export async function apiReconcile<T = any>(
+  dataTypes: string[],
+  lastKnownTimestamp?: string,
+  options?: ApiOptions
+): Promise<T> {
+  return apiPost<T>('/api/rpc/reconcile', {
+    data_types: dataTypes,
+    last_known_timestamp: lastKnownTimestamp,
+  }, options);
 }

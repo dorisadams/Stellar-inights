@@ -1,3 +1,7 @@
+// In test builds, .unwrap() and .expect() are idiomatic — suppress the lints
+// crate-wide so individual test modules don't need per-module allows.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use anyhow::Context;
 use axum::{
     http::{
